@@ -25,7 +25,13 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
 #endif
 #include "imgui_internal.h"
-#include "ImGuizmo.h"
+#include "ImGuizmo.hpp"
+
+#include <cmath>
+#ifndef ImIsFinite
+#define ImIsFinite(_VAL) std::isfinite(_VAL)
+#endif
+
 #if !defined(_WIN32) 
 #define _malloca(x) alloca(x)
 #else
@@ -630,6 +636,7 @@ namespace ImGuizmo
       // translation
       vec_t mTranslationPlan;
       vec_t mTranslationPlanOrigin;
+      vec_t mLastTranslationPlanPos;
       vec_t mMatrixOrigin;
       vec_t mTranslationLastDelta;
 
@@ -1750,8 +1757,17 @@ namespace ImGuizmo
          ImGui::CaptureMouseFromApp(true);
 #endif
 
-         const float len = fabsf(IntersectRayPlane(gContext.mRayOrigin, gContext.mRayVector, gContext.mTranslationPlan)); // near plan
-         vec_t newPos = gContext.mRayOrigin + gContext.mRayVector * len;
+         const float len = IntersectRayPlane(gContext.mRayOrigin, gContext.mRayVector, gContext.mTranslationPlan);
+         vec_t newPos;
+         if (len >= 0.f && ImIsFinite(len))
+         {
+             newPos = gContext.mRayOrigin + gContext.mRayVector * len;
+             gContext.mLastTranslationPlanPos = newPos;
+         }
+         else
+         {
+             newPos = gContext.mLastTranslationPlanPos;
+         }
 
          // compute delta
          vec_t newOrigin = newPos - gContext.mRelativeOrigin * gContext.mScreenFactor;
@@ -1848,6 +1864,7 @@ namespace ImGuizmo
             gContext.mTranslationPlan = BuildPlan(gContext.mModel.v.position, movePlanNormal[type - MOVE_X]);
             const float len = IntersectRayPlane(gContext.mRayOrigin, gContext.mRayVector, gContext.mTranslationPlan);
             gContext.mTranslationPlanOrigin = gContext.mRayOrigin + gContext.mRayVector * len;
+            gContext.mLastTranslationPlanPos = gContext.mTranslationPlanOrigin;
             gContext.mMatrixOrigin = gContext.mModel.v.position;
 
             gContext.mRelativeOrigin = (gContext.mTranslationPlanOrigin - gContext.mModel.v.position) * (1.f / gContext.mScreenFactor);
@@ -1858,113 +1875,137 @@ namespace ImGuizmo
 
    static bool HandleScale(float* matrix, float* deltaMatrix, int& type, float* snap)
    {
-      ImGuiIO& io = ImGui::GetIO();
-      bool modified = false;
+       ImGuiIO& io = ImGui::GetIO();
+       bool modified = false;
 
-      if (!gContext.mbUsing)
-      {
-         // find new possible way to scale
-         type = GetScaleType();
-         if (type != NONE)
-         {
+       if (!gContext.mbUsing)
+       {
+           // find new possible way to scale
+           type = GetScaleType();
+           if (type != NONE)
+           {
 #if defined(IMGUI_VERSION_NUM) && IMGUI_VERSION_NUM >= 18900
-            // ImGui moderno
-            ImGui::SetNextFrameWantCaptureMouse(true);
+               // ImGui moderno
+               ImGui::SetNextFrameWantCaptureMouse(true);
 #else
-            // ImGui antiguo
-            ImGui::CaptureMouseFromApp(true);
+               // ImGui antiguo
+               ImGui::CaptureMouseFromApp(true);
 #endif
 
-         }
-         if (CanActivate() && type != NONE)
-         {
-            gContext.mbUsing = true;
-            gContext.mEditingID = gContext.mActualID;
-            gContext.mCurrentOperation = type;
-            const vec_t movePlanNormal[] = { gContext.mModel.v.up, gContext.mModel.v.dir, gContext.mModel.v.right, gContext.mModel.v.dir, gContext.mModel.v.up, gContext.mModel.v.right, -gContext.mCameraDir };
-            // pickup plan
+           }
+           if (CanActivate() && type != NONE)
+           {
+               gContext.mbUsing = true;
+               gContext.mEditingID = gContext.mActualID;
+               gContext.mCurrentOperation = type;
+               const vec_t movePlanNormal[] = { gContext.mModel.v.up, gContext.mModel.v.dir, gContext.mModel.v.right, gContext.mModel.v.dir, gContext.mModel.v.up, gContext.mModel.v.right, -gContext.mCameraDir };
+               // pickup plan
 
-            gContext.mTranslationPlan = BuildPlan(gContext.mModel.v.position, movePlanNormal[type - SCALE_X]);
-            const float len = IntersectRayPlane(gContext.mRayOrigin, gContext.mRayVector, gContext.mTranslationPlan);
-            gContext.mTranslationPlanOrigin = gContext.mRayOrigin + gContext.mRayVector * len;
-            gContext.mMatrixOrigin = gContext.mModel.v.position;
-            gContext.mScale.Set(1.f, 1.f, 1.f);
-            gContext.mRelativeOrigin = (gContext.mTranslationPlanOrigin - gContext.mModel.v.position) * (1.f / gContext.mScreenFactor);
-            gContext.mScaleValueOrigin = makeVect(gContext.mModelSource.v.right.Length(), gContext.mModelSource.v.up.Length(), gContext.mModelSource.v.dir.Length());
-            gContext.mSaveMousePosx = io.MousePos.x;
-         }
-      }
-      // scale
-      if (gContext.mbUsing && (gContext.mActualID == -1 || gContext.mActualID == gContext.mEditingID))
-      {
+               gContext.mTranslationPlan = BuildPlan(gContext.mModel.v.position, movePlanNormal[type - SCALE_X]);
+               const float len = IntersectRayPlane(gContext.mRayOrigin, gContext.mRayVector, gContext.mTranslationPlan);
+               gContext.mTranslationPlanOrigin = gContext.mRayOrigin + gContext.mRayVector * len;
+               gContext.mMatrixOrigin = gContext.mModel.v.position;
+               gContext.mScale.Set(1.f, 1.f, 1.f);
+               gContext.mRelativeOrigin = (gContext.mTranslationPlanOrigin - gContext.mModel.v.position) * (1.f / gContext.mScreenFactor);
+               gContext.mScaleValueOrigin = makeVect(gContext.mModelSource.v.right.Length(), gContext.mModelSource.v.up.Length(), gContext.mModelSource.v.dir.Length());
+               gContext.mSaveMousePosx = io.MousePos.x;
+           }
+       }
+       // scale
+       if (gContext.mbUsing && (gContext.mActualID == -1 || gContext.mActualID == gContext.mEditingID))
+       {
 #if defined(IMGUI_VERSION_NUM) && IMGUI_VERSION_NUM >= 18900
-         // ImGui moderno
-         ImGui::SetNextFrameWantCaptureMouse(true);
+           // ImGui moderno
+           ImGui::SetNextFrameWantCaptureMouse(true);
 #else
-         // ImGui antiguo
-         ImGui::CaptureMouseFromApp(true);
+           // ImGui antiguo
+           ImGui::CaptureMouseFromApp(true);
 #endif
 
-         const float len = IntersectRayPlane(gContext.mRayOrigin, gContext.mRayVector, gContext.mTranslationPlan);
-         vec_t newPos = gContext.mRayOrigin + gContext.mRayVector * len;
-         vec_t newOrigin = newPos - gContext.mRelativeOrigin * gContext.mScreenFactor;
-         vec_t delta = newOrigin - gContext.mModel.v.position;
+           const float len = IntersectRayPlane(gContext.mRayOrigin, gContext.mRayVector, gContext.mTranslationPlan);
+           vec_t newPos = gContext.mRayOrigin + gContext.mRayVector * len;
+           vec_t newOrigin = newPos - gContext.mRelativeOrigin * gContext.mScreenFactor;
+           vec_t delta = newOrigin - gContext.mModel.v.position;
 
-         // 1 axis constraint
-         if (gContext.mCurrentOperation >= SCALE_X && gContext.mCurrentOperation <= SCALE_Z)
-         {
-            int axisIndex = gContext.mCurrentOperation - SCALE_X;
-            const vec_t& axisValue = *(vec_t*)&gContext.mModel.m[axisIndex];
-            float lengthOnAxis = Dot(axisValue, delta);
-            delta = axisValue * lengthOnAxis;
+           // 1 axis constraint
+           // NOTE (ScissionForge):
+           // We override SCALE_X to use a simple screen-space horizontal mapping because
+           // the original 3D ratio computation was producing unstable jumps in some camera/object
+           // configurations. This makes X scale more stable but sometimes less intuitive
+           // (direction can appear inverted depending on the view). Y/Z keep the original
+           // ImGuizmo behavior.
 
-            vec_t baseVector = gContext.mTranslationPlanOrigin - gContext.mModel.v.position;
-            float ratio = Dot(axisValue, baseVector + delta) / Dot(axisValue, baseVector);
+           if (gContext.mCurrentOperation >= SCALE_X && gContext.mCurrentOperation <= SCALE_Z)
+           {
+               int axisIndex = gContext.mCurrentOperation - SCALE_X;
 
-            gContext.mScale[axisIndex] = max(ratio, 0.001f);
-         }
-         else
-         {
-            float scaleDelta = (io.MousePos.x - gContext.mSaveMousePosx) * 0.01f;
-            gContext.mScale.Set(max(1.f + scaleDelta, 0.001f));
-         }
+               // Eje X: usamos un mapeo simple basado en el movimiento horizontal del ratón.
+               // Esto es estable y no depende de la geometría 3D ni del plano de intersección.
+               if (axisIndex == 0) // SCALE_X
+               {
+                   float scaleDelta = (io.MousePos.x - gContext.mSaveMousePosx) * 0.01f;
+                   float ratio = max(1.0f + scaleDelta, 0.001f);
 
-         // snap
-         if (snap)
-         {
-            float scaleSnap[] = { snap[0], snap[0], snap[0] };
-            ComputeSnap(gContext.mScale, scaleSnap);
-         }
+                   // Solo escala el eje X; los otros se quedan a 1.
+                   gContext.mScale.Set(1.0f, 1.0f, 1.0f);
+                   gContext.mScale[0] = ratio;
+               }
+               else
+               {
+                   // Ejes Y y Z: dejamos el comportamiento original basado en proyección 3D.
+                   const vec_t& axisValue = *(vec_t*)&gContext.mModel.m[axisIndex];
+                   float lengthOnAxis = Dot(axisValue, delta);
+                   delta = axisValue * lengthOnAxis;
 
-         // no 0 allowed
-         for (int i = 0; i < 3; i++)
-            gContext.mScale[i] = max(gContext.mScale[i], 0.001f);
+                   vec_t baseVector = gContext.mTranslationPlanOrigin - gContext.mModel.v.position;
+                   float ratio = Dot(axisValue, baseVector + delta) / Dot(axisValue, baseVector);
 
-         if(gContext.mScaleLast != gContext.mScale)
-         {
-             modified = true;
-         }
-         gContext.mScaleLast = gContext.mScale;
+                   gContext.mScale[axisIndex] = max(ratio, 0.001f);
+               }
+           }
+           else
+           {
+               float scaleDelta = (io.MousePos.x - gContext.mSaveMousePosx) * 0.01f;
+               gContext.mScale.Set(max(1.f + scaleDelta, 0.001f));
+           }
 
-         // compute matrix & delta
-         matrix_t deltaMatrixScale;
-         deltaMatrixScale.Scale(gContext.mScale * gContext.mScaleValueOrigin);
 
-         matrix_t res = deltaMatrixScale * gContext.mModel;
-         *(matrix_t*)matrix = res;
+           // snap
+           if (snap)
+           {
+               float scaleSnap[] = { snap[0], snap[0], snap[0] };
+               ComputeSnap(gContext.mScale, scaleSnap);
+           }
 
-         if (deltaMatrix)
-         {
-            deltaMatrixScale.Scale(gContext.mScale);
-            memcpy(deltaMatrix, deltaMatrixScale.m16, sizeof(float) * 16);
-         }
+           // no 0 allowed
+           for (int i = 0; i < 3; i++)
+               gContext.mScale[i] = max(gContext.mScale[i], 0.001f);
 
-         if (!io.MouseDown[0])
-            gContext.mbUsing = false;
+           if (gContext.mScaleLast != gContext.mScale)
+           {
+               modified = true;
+           }
+           gContext.mScaleLast = gContext.mScale;
 
-         type = gContext.mCurrentOperation;
-      }
-      return modified;
+           // compute matrix & delta
+           matrix_t deltaMatrixScale;
+           deltaMatrixScale.Scale(gContext.mScale * gContext.mScaleValueOrigin);
+
+           matrix_t res = deltaMatrixScale * gContext.mModel;
+           *(matrix_t*)matrix = res;
+
+           if (deltaMatrix)
+           {
+               deltaMatrixScale.Scale(gContext.mScale);
+               memcpy(deltaMatrix, deltaMatrixScale.m16, sizeof(float) * 16);
+           }
+
+           if (!io.MouseDown[0])
+               gContext.mbUsing = false;
+
+           type = gContext.mCurrentOperation;
+       }
+       return modified;
    }
 
    static bool HandleRotation(float* matrix, float* deltaMatrix, int& type, float* snap)

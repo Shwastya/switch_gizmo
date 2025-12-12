@@ -2323,14 +2323,11 @@ namespace IMGUIZMO_NAMESPACE
          if (gContext.mCurrentOperation >= MT_SCALE_X && gContext.mCurrentOperation <= MT_SCALE_Z)
          {
             int axisIndex = gContext.mCurrentOperation - MT_SCALE_X;
-            const vec_t& axisValue = *(vec_t*)&gContext.mModelLocal.m[axisIndex];
-            float lengthOnAxis = Dot(axisValue, delta);
-            delta = axisValue * lengthOnAxis;
+            float scaleDelta = (io.MousePos.x - gContext.mSaveMousePosx) * 0.01f;
+            float ratio = ImMax(1.0f + scaleDelta, 0.001f);
 
-            vec_t baseVector = gContext.mTranslationPlanOrigin - gContext.mModelLocal.v.position;
-            float ratio = Dot(axisValue, baseVector + delta) / Dot(axisValue, baseVector);
-
-            gContext.mScale[axisIndex] = max(ratio, 0.001f);
+            gContext.mScale.Set(1.f, 1.f, 1.f);
+            gContext.mScale[axisIndex] = ratio;
          }
          else
          {
